@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
+import { ArrowUpRight, RotateCcw } from 'lucide-react';
 import { EVENTS, money, type Point } from './game/engine';
 
 const ease = [0.2, 0.8, 0.2, 1] as const;
@@ -24,6 +25,32 @@ export function StartTape() {
     <path d="M59 216h38M142 216h39" stroke="var(--green)" strokeWidth="1.5"/>
     <circle cx="119" cy="216" r="2" fill="var(--green)"/>
   </svg>;
+}
+
+export function WelcomeVisual() {
+  const [rewound, setRewound] = useState(false);
+  const reduceMotion = useReducedMotion();
+  return <div className="welcome-visual" aria-label="Interactive rewind preview">
+    <div className="visual-meta mono"><span>Last Ringgit / 01</span><span>30 days</span></div>
+    <motion.div className="visual-paper" initial={reduceMotion ? false : { opacity: 0, y: 24, rotate: 2 }}
+      animate={{ opacity: 1, y: 0, rotate: rewound ? -2 : 2 }} transition={{ duration: reduceMotion ? .15 : .6, ease }}>
+      <div className="visual-paper-head mono"><span>First salary</span><span>Day 01</span></div>
+      <strong className="visual-salary mono">RM1,500</strong>
+      <div className="visual-rule"/>
+      <div className="visual-paper-row"><span>Set aside for bills</span><span className="mono">−RM400</span></div>
+      <div className="visual-paper-row"><span>What happens next?</span><span>↗</span></div>
+      <svg viewBox="0 0 260 90" className="visual-path" role="img" aria-label={rewound ? 'Alternative path highlighted' : 'Original month path'}>
+        <path d="M4 14H55V30H95V42H140V55H185V67H256" fill="none" stroke="var(--ink)" strokeWidth="2" strokeDasharray={rewound ? '5 5' : undefined}/>
+        <motion.path d="M4 14H55V30H95V23H140V35H185V42H256" fill="none" stroke="var(--green)" strokeWidth="3"
+          initial={false} animate={{ pathLength: rewound ? 1 : 0, opacity: rewound ? 1 : 0 }} transition={{ duration: reduceMotion ? .15 : .65, ease }}/>
+        <circle cx="95" cy="30" r="4" fill="var(--green)"/>
+      </svg>
+      <div className="visual-paper-foot mono">{rewound ? 'A different choice. A different line.' : 'Every choice leaves a line.'}</div>
+    </motion.div>
+    <button className="visual-rewind" onClick={() => setRewound(value => !value)}>
+      <RotateCcw size={16} strokeWidth={1.7}/>{rewound ? 'Show original' : 'Try rewind'}<ArrowUpRight size={16} strokeWidth={1.7}/>
+    </button>
+  </div>;
 }
 
 export function DayTape({ day, currentDay = day }: { day: number; currentDay?: number }) {
@@ -58,6 +85,7 @@ export function DivergenceChart({ original, alternative, changedDay, onDay }: {
   const select = (n: number) => { setDay(n); onDay(n); };
   return <div className="chart">
     <div className="chart-heading"><h2>What changed over the month</h2><span className="mono">Day {day}</span></div>
+    <div className="chart-legend mono"><span>Original</span><span>Alternative</span></div>
     <svg viewBox="0 0 350 184" preserveAspectRatio="none" role="img" aria-label="Cash by day, original dashed and alternative green"
       onPointerMove={e => { if (e.buttons) { const rect = e.currentTarget.getBoundingClientRect(); select(Math.max(1, Math.min(30, Math.round((e.clientX - rect.left) / rect.width * 30)))); } }}>
       {[0, .5, 1].map(f => <g key={f}><line x1="62" x2="323" y1={y(max * f)} y2={y(max * f)} stroke="var(--line)"/>
@@ -69,8 +97,6 @@ export function DivergenceChart({ original, alternative, changedDay, onDay }: {
       <line x1={x(day)} x2={x(day)} y1="27" y2="150" stroke="var(--muted)" strokeWidth="1"/>
       <circle cx={x(changedDay)} cy={y(alternative[changedDay - 1].cash)} r="3" fill="var(--green)"/>
       <text x={x(changedDay)} y="18" textAnchor="middle" fill="var(--green)" fontSize="9">You changed this</text>
-      <text x="323" y={Math.min(178, y(original[29].cash) + 17)} textAnchor="end" fill="var(--ink)" fontSize="10">Original</text>
-      <text x="323" y={Math.max(18, y(alternative[29].cash) - 8)} textAnchor="end" fill="var(--green)" fontSize="10">Alternative</text>
     </svg>
     <input type="range" min="1" max="30" value={day} aria-label="Compare day" onChange={e => select(Number(e.target.value))}/>
     <p className="chart-readout mono">Day {day}: original {money(original[day - 1].cash)}, alternative {money(alternative[day - 1].cash)}</p>

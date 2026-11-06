@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { ArrowLeft, ArrowRight, Check, History, RotateCcw, UserRound, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, History, House, RotateCcw, SlidersHorizontal, UserRound, X } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { useGame } from './game/useGame';
 import { EVENTS, eligibleEvents, money, replay, type Choice } from './game/engine';
 import { DayTape, DivergenceChart, Odometer, ReceiptSlip, ScoreStamp, WelcomeVisual } from './components';
 
 type Screen = 'start' | 'split' | 'play' | 'history' | 'rewind' | 'report';
+type Theme = 'light' | 'dark' | 'system';
+type Accent = 'green' | 'blue' | 'violet';
 
 function Confidence({ value, onChange }: { value: number | null; onChange: (n: number) => void }) {
   return <div className="segments" role="group" aria-label="Confidence from one to five">
@@ -57,21 +59,42 @@ export default function App() {
   const [profileName, setProfileName] = useState(profile);
   const [signInOpen, setSignInOpen] = useState(false);
   const signInDialog = useRef<HTMLDialogElement>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsDialog = useRef<HTMLDialogElement>(null);
+  const [theme, setTheme] = useState<Theme>(() => {
+    try { const saved = localStorage.getItem('last-ringgit:theme'); return saved === 'dark' || saved === 'system' ? saved : 'light'; } catch { return 'light'; }
+  });
+  const [accent, setAccent] = useState<Accent>(() => {
+    try { const saved = localStorage.getItem('last-ringgit:accent'); return saved === 'blue' || saved === 'violet' ? saved : 'green'; } catch { return 'green'; }
+  });
   useEffect(() => { window.scrollTo(0, 0); }, [screen]);
   useEffect(() => {
     const dialog = signInDialog.current;
     if (signInOpen && !dialog?.open) dialog?.showModal();
     if (!signInOpen && dialog?.open) dialog.close();
   }, [signInOpen]);
+  useEffect(() => {
+    const dialog = settingsDialog.current;
+    if (settingsOpen && !dialog?.open) dialog?.showModal();
+    if (!settingsOpen && dialog?.open) dialog.close();
+  }, [settingsOpen]);
+  useEffect(() => {
+    if (theme === 'system') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.dataset.theme = theme;
+    document.documentElement.dataset.accent = accent;
+    try { localStorage.setItem('last-ringgit:theme', theme); localStorage.setItem('last-ringgit:accent', accent); } catch { /* Preferences still work for this visit. */ }
+  }, [theme, accent]);
 
   const current = state.currentEvent;
+  const playedDecisions = state.history.filter(d => d.eventId !== 'split');
   const day = receipt?.day ?? current?.day ?? state.day;
   const rewindEvent = EVENTS.find(e => e.id === rewindId);
   const previousDecision = state.history.find(d => d.eventId === rewindId);
   const prior = rewindEvent ? replay(state.history.filter(d => d.eventId === 'split' || EVENTS.find(e => e.id === d.eventId)!.day < rewindEvent.day)) : state;
   const comparison = screen === 'rewind' && state.history.length && alternativeId ? game.rewindPreview(rewindId, alternativeId) : null;
 
-  function openHistory() { setReturnTo(screen === 'report' ? 'report' : 'play'); setScreen('history'); }
+  function openHistory() { if (screen === 'history') return; if (screen === 'rewind') { setScreen('history'); return; } setReturnTo(screen === 'report' ? 'report' : 'play'); setScreen('history'); }
+  function goToPrimary() { setScreen(state.history.length ? state.finished ? 'report' : 'play' : screen === 'split' ? 'split' : 'start'); }
   function rewind(id: string) { if (id !== 'split' && !state.history.some(d => d.eventId === id)) return; setRewindId(id); setAlternativeId(''); setChartDay(30); setScreen('rewind'); }
   function confirm() {
     if (!current || !choice || (-choice.cashChange > state.cash && !useSavings)) return;
@@ -89,9 +112,14 @@ export default function App() {
   }
 
   return <div className="app min-h-screen">
-    <header className={`topbar ${screen === 'start' ? 'start-topbar' : ''}`}><button className="wordmark" onClick={() => setScreen(state.history.length ? state.finished ? 'report' : 'play' : 'start')}><span className="wordmark-symbol" aria-hidden="true">L<span>R</span></span> Last Ringgit</button>
+    <header className={`topbar ${screen === 'start' ? 'start-topbar' : ''}`}><button className="wordmark" onClick={goToPrimary}><span className="wordmark-symbol" aria-hidden="true">L<span>R</span></span> Last Ringgit</button>
       <span className="mono top-day">{screen === 'start' ? 'One salary. 30 days.' : `Day ${day} of 30`}</span>
-      <div className="header-actions">{screen !== 'start' && <button className="utility history-trigger" aria-label="History" onClick={openHistory}><History size={18} strokeWidth={1.7}/><span>History</span></button>}
+      <nav className="app-nav" aria-label="Main navigation">
+        <button aria-current={screen === 'start' || screen === 'split' || screen === 'play' || screen === 'report' ? 'page' : undefined} onClick={goToPrimary}><House size={17}/><span>{state.finished ? 'Report' : state.history.length ? 'Play' : screen === 'split' ? 'Set up' : 'Welcome'}</span></button>
+        <button aria-current={screen === 'history' || screen === 'rewind' ? 'page' : undefined} disabled={!state.history.length} title={!state.history.length ? 'Play a decision to unlock history' : undefined} onClick={openHistory}><History size={17}/><span>History</span></button>
+        <button aria-haspopup="dialog" onClick={() => setSettingsOpen(true)}><SlidersHorizontal size={17}/><span>Customize</span></button>
+      </nav>
+      <div className="header-actions">
         <button className="sign-in-trigger" onClick={() => { setProfileName(profile); setSignInOpen(true); }}><UserRound size={17} strokeWidth={1.7}/><span>{profile || 'Sign in'}</span></button></div>
     </header>
     <dialog ref={signInDialog} className="sign-in-dialog" onClose={() => setSignInOpen(false)} aria-labelledby="sign-in-title">
@@ -102,6 +130,18 @@ export default function App() {
         <button className="primary" type="submit">{profile ? 'Update local profile' : 'Continue on this device'} <ArrowRight size={18}/></button></form>
       {profile && <button className="text-button" onClick={() => { localStorage.removeItem('last-ringgit:profile'); setProfile(''); setProfileName(''); setSignInOpen(false); }}>Remove local profile</button>}
       <small>Your game decisions remain in this browser unless you choose Play again.</small>
+    </dialog>
+    <dialog ref={settingsDialog} className="sign-in-dialog settings-dialog" onClose={() => setSettingsOpen(false)} aria-labelledby="settings-title">
+      <button className="dialog-close" aria-label="Close customization" onClick={() => setSettingsOpen(false)}><X size={20}/></button>
+      <p className="section-note mono">Make it yours</p><h2 id="settings-title">Customize</h2>
+      <p>Choose a look that feels comfortable. Your choices stay on this device.</p>
+      <fieldset><legend>Appearance</legend><div className="setting-options">
+        {(['light', 'dark', 'system'] as const).map(value => <button key={value} type="button" aria-pressed={theme === value} onClick={() => setTheme(value)}>{value[0].toUpperCase() + value.slice(1)}</button>)}
+      </div></fieldset>
+      <fieldset><legend>Accent color</legend><div className="setting-options accent-options">
+        {(['green', 'blue', 'violet'] as const).map(value => <button key={value} type="button" aria-pressed={accent === value} onClick={() => setAccent(value)}><span className={`accent-swatch ${value}`}/>{value[0].toUpperCase() + value.slice(1)}</button>)}
+      </div></fieldset>
+      <small>Motion follows your device’s reduced motion setting.</small>
     </dialog>
     <main>
       {screen === 'start' && <section className="start-screen">
@@ -142,8 +182,8 @@ export default function App() {
       {screen === 'play' && !receipt && state.finished && <section className="narrow-screen"><h1>The month is complete</h1><button className="primary" onClick={() => setScreen('report')}>See your report</button></section>}
 
       {screen === 'history' && <section className="history-screen"><button className="back" onClick={() => setScreen(returnTo)}><ArrowLeft size={16}/> Back</button><p className="section-note mono">Your decisions</p><h1>History and rewind</h1><p className="lead">Choose a decision to see what might have changed.</p>
-        <div className="history-head mono"><span>Day</span><span>Decision</span><span>Amount</span></div>
-        <div className="history-list">{state.history.filter(d => d.eventId !== 'split').map(d => { const event = EVENTS.find(e => e.id === d.eventId)!; const picked = event.choices.find(c => c.id === d.choiceId)!; return <div className="history-row" key={d.eventId}><span className="mono">{event.day}</span><span><strong>{event.title}</strong><small>{picked.label}</small></span><span className="mono">{picked.cashChange ? `−${money(-picked.cashChange)}` : 'RM0'}</span><button onClick={() => rewind(d.eventId)}><RotateCcw size={16} strokeWidth={1.5}/> Rewind to here</button></div>; })}</div>
+        {playedDecisions.length ? <><div className="history-head mono"><span>Day</span><span>Decision</span><span>Amount</span></div>
+        <div className="history-list">{playedDecisions.map(d => { const event = EVENTS.find(e => e.id === d.eventId)!; const picked = event.choices.find(c => c.id === d.choiceId)!; return <div className="history-row" key={d.eventId}><span className="mono">{event.day}</span><span><strong>{event.title}</strong><small>{picked.label}</small></span><span className="mono">{picked.cashChange ? `−${money(-picked.cashChange)}` : 'RM0'}</span><button onClick={() => rewind(d.eventId)}><RotateCcw size={16} strokeWidth={1.5}/> Rewind to here</button></div>; })}</div></> : <p className="history-empty">Your choices will appear here as you play. You can still revisit your salary split.</p>}
         <button className="text-button" onClick={() => rewind('split')}>Rewind to Day 1 split</button>
       </section>}
 

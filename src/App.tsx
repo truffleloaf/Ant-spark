@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import type { FormEvent } from 'react';
 import { ArrowLeft, ArrowRight, Check, History, House, RotateCcw, SlidersHorizontal, UserRound, X } from 'lucide-react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { useGame } from './game/useGame';
-import { EVENTS, eligibleEvents, money, replay, type Choice } from './game/engine';
+import { money, type Choice } from './game/engine';
 import { DayTape, DivergenceChart, Odometer, ReceiptSlip, ScoreStamp, WelcomeVisual } from './components';
 
 type Screen = 'start' | 'split' | 'play' | 'history' | 'rewind' | 'report';
@@ -43,9 +42,11 @@ function BalanceLedger({ cash, savings, commitments, essentials }: { cash: numbe
 }
 
 export default function App() {
-  const game = useGame(), { state } = game;
-  const [screen, setScreen] = useState<Screen>(() => new URLSearchParams(location.search).has('demo') || state.history.length ? state.finished ? 'report' : 'play' : 'start');
-  const [savings, setSavings] = useState(200);
+  const game = useGame(), { state, config } = game;
+  const {EVENTS,eligibleEvents,replay}=game.engine;
+  const availableIncome=config.income-config.bills;
+  const [screen, setScreen] = useState<Screen>(() => state.history.length ? state.finished ? 'report' : 'play' : 'start');
+  const [savings, setSavings] = useState(game.profile.savings_goal);
   const [choice, setChoice] = useState<Choice | null>(null);
   const [useSavings, setUseSavings] = useState(false);
   const [receipt, setReceipt] = useState<{ day: number; label: string; change: number; repair: boolean } | null>(null);
@@ -53,10 +54,7 @@ export default function App() {
   const [alternativeId, setAlternativeId] = useState('');
   const [chartDay, setChartDay] = useState(30);
   const [returnTo, setReturnTo] = useState<'play' | 'report'>('play');
-  const [profile, setProfile] = useState(() => {
-    try { return localStorage.getItem('last-ringgit:profile') || ''; } catch { return ''; }
-  });
-  const [profileName, setProfileName] = useState(profile);
+  const profile = game.profile.nickname;
   const [signInOpen, setSignInOpen] = useState(false);
   const signInDialog = useRef<HTMLDialogElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -102,34 +100,24 @@ export default function App() {
     setReceipt({ day: current.day, label: choice.label, change: choice.cashChange, repair: current.id === 'friends' && choice.id === 'big' });
     game.choose(choice.id, funding);
   }
-  function saveProfile(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const name = profileName.trim().slice(0, 32);
-    if (!name) return;
-    try { localStorage.setItem('last-ringgit:profile', name); } catch { return; }
-    setProfile(name);
-    setSignInOpen(false);
-  }
 
   return <div className="app min-h-screen">
     <header className={`topbar ${screen === 'start' ? 'start-topbar' : ''}`}><button className="wordmark" onClick={goToPrimary}><span className="wordmark-symbol" aria-hidden="true">L<span>R</span></span> Last Ringgit</button>
-      <span className="mono top-day">{screen === 'start' ? 'One salary. 30 days.' : `Day ${day} of 30`}</span>
+      <span className="mono top-day">{screen === 'start' ? 'One month. Your choices.' : `Day ${day} of 30`}</span>
       <nav className="app-nav" aria-label="Main navigation">
         <button aria-current={screen === 'start' || screen === 'split' || screen === 'play' || screen === 'report' ? 'page' : undefined} onClick={goToPrimary}><House size={17}/><span>{state.finished ? 'Report' : state.history.length ? 'Play' : screen === 'split' ? 'Set up' : 'Welcome'}</span></button>
         <button aria-current={screen === 'history' || screen === 'rewind' ? 'page' : undefined} disabled={!state.history.length} title={!state.history.length ? 'Play a decision to unlock history' : undefined} onClick={openHistory}><History size={17}/><span>History</span></button>
         <button aria-haspopup="dialog" onClick={() => setSettingsOpen(true)}><SlidersHorizontal size={17}/><span>Customize</span></button>
       </nav>
       <div className="header-actions">
-        <button className="sign-in-trigger" onClick={() => { setProfileName(profile); setSignInOpen(true); }}><UserRound size={17} strokeWidth={1.7}/><span>{profile || 'Sign in'}</span></button></div>
+        <button className="sign-in-trigger" onClick={() => { setSignInOpen(true); }}><UserRound size={17} strokeWidth={1.7}/><span>{profile || 'Sign in'}</span></button></div>
     </header>
     <dialog ref={signInDialog} className="sign-in-dialog" onClose={() => setSignInOpen(false)} aria-labelledby="sign-in-title">
       <button className="dialog-close" aria-label="Close sign in" onClick={() => setSignInOpen(false)}><X size={20}/></button>
-      <p className="section-note mono">Your space</p><h2 id="sign-in-title">{profile ? 'Your local profile' : 'Sign in'}</h2>
-      <p>Keep a name with your progress on this device. Online accounts and syncing are not connected yet.</p>
-      <form onSubmit={saveProfile}><label htmlFor="profile-name">Your name</label><input id="profile-name" name="profile-name" autoComplete="nickname" maxLength={32} required value={profileName} onChange={event => setProfileName(event.target.value)}/>
-        <button className="primary" type="submit">{profile ? 'Update local profile' : 'Continue on this device'} <ArrowRight size={18}/></button></form>
-      {profile && <button className="text-button" onClick={() => { localStorage.removeItem('last-ringgit:profile'); setProfile(''); setProfileName(''); setSignInOpen(false); }}>Remove local profile</button>}
-      <small>Your game decisions remain in this browser unless you choose Play again.</small>
+      <p className="section-note mono">Your space</p><h2 id="sign-in-title">{profile}</h2>
+      <p>{config.title} · {money(config.income)} a month</p>
+      <p>Savings goal: {money(game.profile.savings_goal)}</p>
+      <small>Your game decisions stay in this browser. Account controls are above the game.</small>
     </dialog>
     <dialog ref={settingsDialog} className="sign-in-dialog settings-dialog" onClose={() => setSettingsOpen(false)} aria-labelledby="settings-title">
       <button className="dialog-close" aria-label="Close customization" onClick={() => setSettingsOpen(false)}><X size={20}/></button>
@@ -144,21 +132,22 @@ export default function App() {
       <small>Motion follows your device’s reduced motion setting.</small>
     </dialog>
     <main>
+      {game.storageError && <p role="alert">{game.storageError}</p>}
       {screen === 'start' && <section className="start-screen">
-        <div className="start-hero"><div className="hero-copy"><p className="hero-kicker mono"><span/>A game about real choices</p><h1>Make your first salary <em>last.</em></h1><p className="lead">One salary. 30 days. Every ringgit counts.</p><p className="hero-description">Choose how to spend, handle surprises, then rewind a decision to see how the month could have gone.</p><div className="hero-jump"><a href="#before-you-start">Set up your month <ArrowRight size={18}/></a><span className="mono">About 5 minutes</span></div></div><WelcomeVisual/></div>
+        <div className="start-hero"><div className="hero-copy"><p className="hero-kicker mono"><span/>A game about real choices</p><h1>Make your money <em>last.</em></h1><p className="lead">One month. Your choices. Every ringgit counts.</p><p className="hero-description">Choose how to spend, handle surprises, then rewind a decision to see how the month could have gone.</p><div className="hero-jump"><a href="#before-you-start">Set up your month <ArrowRight size={18}/></a><span className="mono">About 5 minutes</span></div></div><WelcomeVisual/></div>
         <div className="start-form" id="before-you-start"><div className="form-heading"><span className="mono">01 / Set up</span><h2>Start with what you know</h2><p>No right answer. You can see how your choices play out.</p></div><p>How confident are you managing everyday money?</p><Confidence value={game.confidence.before} onChange={n => game.setConfidence('before', n)}/>
-          <div className="scenarios"><button className="scenario active" aria-pressed="true"><span>First job</span><span className="mono">RM1,500 a month</span></button><div className="scenario disabled"><span>University student · RM800</span><span>Coming soon</span></div><div className="scenario disabled"><span>Fresh graduate · RM2,500</span><span>Coming soon</span></div></div>
+          <div className="scenarios"><div className="scenario active"><span>{config.title}</span><span className="mono">{money(config.income)} a month</span></div><p className="quiet">Chosen for {game.profile.nickname}: {money(config.bills)} bills, {money(config.dailyBaseline)} daily essentials, and a {money(game.profile.savings_goal)} savings goal.</p></div>
           <button className="primary start-cta" onClick={() => setScreen('split')}>Start the month <ArrowRight size={18}/></button>
         </div>
       </section>}
 
       {screen === 'split' && <section className="narrow-screen">
-        <p className="section-note mono">Day 1 / Salary arrives</p><h1>Split your salary</h1><p className="lead">Set aside what you want to protect. The bills are fixed at RM400.</p>
-        <div className="split-bar" role="img" aria-label={`${money(savings)} savings, ${money(1100 - savings)} cash, RM400 bills`}><span style={{ width: `${savings / 15}%` }}/><span style={{ width: `${(1100 - savings) / 15}%` }}/><span style={{ width: `${400 / 15}%` }}/></div>
-        <div className="ledger"><div className="ledger-row"><span>Protected savings</span><Odometer value={savings}/></div><div className="ledger-row"><span>Cash for the month</span><Odometer value={1100 - savings}/></div><div className="ledger-row"><span>Set aside for bills</span><span className="mono">RM400</span></div></div>
+        <p className="section-note mono">Day 1 / Income arrives</p><h1>Split your income</h1><p className="lead">Set aside what you want to protect. Your simulated bills are {money(config.bills)}.</p>
+        <div className="split-bar" role="img" aria-label={`${money(savings)} savings, ${money(availableIncome - savings)} cash, ${money(config.bills)} bills`}><span style={{ width: `${savings / config.income * 100}%` }}/><span style={{ width: `${(availableIncome - savings) / config.income * 100}%` }}/><span style={{ width: `${config.bills / config.income * 100}%` }}/></div>
+        <div className="ledger"><div className="ledger-row"><span>Protected savings</span><Odometer value={savings}/></div><div className="ledger-row"><span>Cash for the month</span><Odometer value={availableIncome - savings}/></div><div className="ledger-row"><span>Set aside for bills</span><span className="mono">{money(config.bills)}</span></div></div>
         <label className="input-label" htmlFor="savings-number">Savings amount</label><input id="savings-number" className="number-input mono" type="number" min="0" max="500" step="10" value={savings} onChange={e => setSavings(Math.max(0, Math.min(500, Math.round(Number(e.target.value) / 10) * 10)))}/>
         <input className="savings-range" aria-label="Adjust savings" type="range" min="0" max="500" step="10" value={savings} onChange={e => setSavings(Number(e.target.value))}/>
-        <p className="quiet">{savings ? `${money(savings)} savings, ${money(1100 - savings)} cash, RM400 bills.` : 'Nothing set aside. You can still continue.'}</p>
+        <p className="quiet">{savings ? `${money(savings)} savings, ${money(availableIncome - savings)} cash, ${money(config.bills)} bills.` : 'Nothing set aside. You can still continue.'}</p>
         <div className="actions"><button className="primary" onClick={() => { game.setSplit(savings); setScreen('play'); }}>Lock in the split</button></div>
       </section>}
 
@@ -200,9 +189,9 @@ export default function App() {
       {screen === 'report' && game.report && <section className="report-screen"><ReceiptSlip report><p className="section-note mono">Your 30-day report</p><div className="report-heading"><h1>Month complete</h1><ScoreStamp score={game.report.score}/></div>
         <div className="ledger report-breakdown">{game.report.breakdown.map(line => <div className="ledger-row" key={line.label}><span>{line.label}<small>{line.reason}</small></span><span className="mono">{line.points} / {line.max}</span></div>)}</div>
         <div className="ledger report-totals"><div className="ledger-row"><span>End balance</span><Odometer value={game.report.endBalance}/></div><div className="ledger-row"><span>Protected savings</span><Odometer value={game.report.savings}/></div><div className="ledger-row"><span>Essentials covered</span><span className="mono">{game.report.essentialsCoveredPct}%</span></div><div className="ledger-row"><span>Emergency preparedness</span><span>{game.report.emergencyPreparedness}</span></div></div>
-        <h2>Your money habit</h2><h3>{game.report.personality.name}</h3><p>{game.report.personality.text}</p><h2>Next steps</h2><ol className="next-steps">{game.report.nextSteps.map(step => <li key={step}>{step}</li>)}</ol>
+        <p>Unmet daily essentials: <strong>{money(state.unpaidEssentials)}</strong>. Unpaid costs reduce essentials coverage.</p><p>Savings goal: {money(game.profile.savings_goal)} · {state.savings >= game.profile.savings_goal ? "Goal reached" : `${money(game.profile.savings_goal-state.savings)} still to go`}</p><h2>Your money habit</h2><h3>{game.report.personality.name}</h3><p>{game.report.personality.text}</p><h2>Next steps</h2><ol className="next-steps">{game.report.nextSteps.map(step => <li key={step}>{step}</li>)}</ol>
         <h2>How confident do you feel now?</h2><p className="quiet">Before: <span className="mono">{game.confidence.before ?? 'Not answered'}</span></p><Confidence value={game.confidence.after} onChange={n => game.setConfidence('after', n)}/>
-        <div className="report-actions"><button className="primary" onClick={openHistory}>Rewind a decision</button><button className="text-button" onClick={() => { setAlternativeId(''); setRewindId(''); game.reset(); setScreen('start'); }}>Play again</button></div><p className="disclaimer">This score is a learning game indicator, not a credit score.</p>
+        <div className="report-actions">{game.hasOriginal && <button className="text-button" onClick={()=>{game.restoreOriginal();setScreen('play');}}>Restore original timeline</button>}<button className="primary" onClick={openHistory}>Rewind a decision</button><button className="text-button" onClick={() => { setAlternativeId(''); setRewindId(''); game.reset(); setScreen('start'); }}>Play again</button></div><p className="disclaimer">Scenario amounts are illustrative. This score is a learning game indicator, not a credit score.</p>
       </ReceiptSlip></section>}
     </main>
   </div>;

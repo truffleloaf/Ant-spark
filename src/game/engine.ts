@@ -27,14 +27,14 @@ export function replay(history:Decision[],scenario='First Job'):GameState{
  const split=history.find(d=>d.eventId==='split');const amount=Number(split?.choiceId);
  if(!split||!Number.isInteger(amount)||amount<0||amount>500||amount%10)return {day:1,cash:0,savings:0,commitments:400,essentials:100,dailyBaseline:15,history:[],currentEvent:null,finished:false};
  let cash=1100-amount,savings=amount,essentials=100,day=1;const kept:Decision[]=[{eventId:'split',choiceId:String(amount)}];
- for(const ev of EVENTS){if(!exists(ev,kept))continue;while(day<ev.day){day++;cash=Math.max(0,cash-15);if(cash===0)essentials=Math.max(0,essentials-2)}
+ for(const ev of EVENTS){if(!exists(ev,kept))continue;while(day<ev.day){day++;cash=Math.max(0,cash-15)}
  const d=history.find(x=>x.eventId===ev.id);if(!d)return {day,cash,savings,commitments:0,essentials,dailyBaseline:15,history:kept,currentEvent:ev,finished:false};
  const ch=ev.choices.find(x=>x.id===d.choiceId);if(!ch||-ch.cashChange>cash+savings||(-ch.cashChange>cash&&d.fundedFrom!=='savings'))return {day,cash,savings,commitments:0,essentials,dailyBaseline:15,history:kept,currentEvent:ev,finished:false};
  const cost=-ch.cashChange;const fromSavings=d.fundedFrom==='savings'||cost>cash;
  if(fromSavings){const drawn=Math.min(savings,cost);savings-=drawn;cash-=cost-drawn}else cash-=cost;
  essentials=Math.max(0,Math.min(100,essentials+ch.essentialsChange));kept.push({...d,fundedFrom:fromSavings&&cost>0?'savings':'cash'});
  }
- while(day<30){day++;cash=Math.max(0,cash-15);if(cash===0)essentials=Math.max(0,essentials-2)}
+ while(day<30){day++;cash=Math.max(0,cash-15)}
  return {day:30,cash,savings,commitments:0,essentials,dailyBaseline:15,history:kept,currentEvent:null,finished:true};
 }
 export function setSplit(history:Decision[],saved:number):Decision[]{if(!Number.isInteger(saved)||saved<0||saved>500||saved%10)throw new Error('Savings must be RM0 to RM500 in RM10 steps');return [{eventId:'split',choiceId:String(saved)},...history.filter(x=>x.eventId!=='split')]}

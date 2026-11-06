@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
-import { ArrowLeft, History, RotateCcw } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import type { FormEvent } from 'react';
+import { ArrowLeft, ArrowRight, Check, History, RotateCcw, UserRound, X } from 'lucide-react';
+import { motion, useReducedMotion } from 'framer-motion';
 import { useGame } from './game/useGame';
 import { EVENTS, eligibleEvents, money, replay, type Choice } from './game/engine';
-import { DayTape, DivergenceChart, Odometer, ReceiptSlip, ScoreStamp, StartTape } from './components';
+import { DayTape, DivergenceChart, Odometer, ReceiptSlip, ScoreStamp, WelcomeVisual } from './components';
 
 type Screen = 'start' | 'split' | 'play' | 'history' | 'rewind' | 'report';
 
@@ -15,13 +17,16 @@ function Confidence({ value, onChange }: { value: number | null; onChange: (n: n
 function ChoiceRows({ choices, selected, onSelect, cash, savings }: {
   choices: Choice[]; selected: string | null; onSelect: (choice: Choice) => void; cash: number; savings: number;
 }) {
+  const reduceMotion = useReducedMotion();
   return <div className="choices">{choices.map(choice => {
     const cost = -choice.cashChange, affordable = cost <= cash + savings;
-    return <button key={choice.id} disabled={!affordable} className={`choice ${selected === choice.id ? 'selected' : ''}`}
+    return <motion.button key={choice.id} disabled={!affordable} className={`choice ${selected === choice.id ? 'selected' : ''}`}
+      whileHover={reduceMotion || !affordable ? undefined : { x: 4 }} whileTap={reduceMotion || !affordable ? undefined : { scale: .995 }} transition={{ duration: .18, ease: [0.2, 0.8, 0.2, 1] }}
       aria-pressed={selected === choice.id} onClick={() => onSelect(choice)}>
-      <span><strong>{choice.label}</strong><small>{choice.detail}</small></span>
+      <span className="choice-indicator" aria-hidden="true">{selected === choice.id && <Check size={13} strokeWidth={2}/>}</span>
+      <span className="choice-copy"><strong>{choice.label}</strong><small>{choice.detail}</small></span>
       <span className="choice-cost mono">{cost ? `−${money(cost)}` : 'RM0'}{!affordable && <small>Not enough available</small>}{cost > cash && affordable && <small>Uses savings</small>}</span>
-    </button>;
+    </motion.button>;
   })}</div>;
 }
 
@@ -46,7 +51,18 @@ export default function App() {
   const [alternativeId, setAlternativeId] = useState('');
   const [chartDay, setChartDay] = useState(30);
   const [returnTo, setReturnTo] = useState<'play' | 'report'>('play');
+  const [profile, setProfile] = useState(() => {
+    try { return localStorage.getItem('last-ringgit:profile') || ''; } catch { return ''; }
+  });
+  const [profileName, setProfileName] = useState(profile);
+  const [signInOpen, setSignInOpen] = useState(false);
+  const signInDialog = useRef<HTMLDialogElement>(null);
   useEffect(() => { window.scrollTo(0, 0); }, [screen]);
+  useEffect(() => {
+    const dialog = signInDialog.current;
+    if (signInOpen && !dialog?.open) dialog?.showModal();
+    if (!signInOpen && dialog?.open) dialog.close();
+  }, [signInOpen]);
 
   const current = state.currentEvent;
   const day = receipt?.day ?? current?.day ?? state.day;
@@ -63,15 +79,36 @@ export default function App() {
     setReceipt({ day: current.day, label: choice.label, change: choice.cashChange, repair: current.id === 'friends' && choice.id === 'big' });
     game.choose(choice.id, funding);
   }
+  function saveProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = profileName.trim().slice(0, 32);
+    if (!name) return;
+    try { localStorage.setItem('last-ringgit:profile', name); } catch { return; }
+    setProfile(name);
+    setSignInOpen(false);
+  }
 
   return <div className="app min-h-screen">
-    {screen !== 'start' && <header className="topbar"><button className="wordmark" onClick={() => setScreen(state.finished ? 'report' : 'play')}>Last Ringgit</button><span className="mono top-day">Day {day} of 30</span><button className="utility" onClick={openHistory}><History size={18} strokeWidth={1.5}/> History</button></header>}
+    <header className={`topbar ${screen === 'start' ? 'start-topbar' : ''}`}><button className="wordmark" onClick={() => setScreen(state.history.length ? state.finished ? 'report' : 'play' : 'start')}><span className="wordmark-symbol" aria-hidden="true">L<span>R</span></span> Last Ringgit</button>
+      <span className="mono top-day">{screen === 'start' ? 'One salary. 30 days.' : `Day ${day} of 30`}</span>
+      <div className="header-actions">{screen !== 'start' && <button className="utility history-trigger" aria-label="History" onClick={openHistory}><History size={18} strokeWidth={1.7}/><span>History</span></button>}
+        <button className="sign-in-trigger" onClick={() => { setProfileName(profile); setSignInOpen(true); }}><UserRound size={17} strokeWidth={1.7}/><span>{profile || 'Sign in'}</span></button></div>
+    </header>
+    <dialog ref={signInDialog} className="sign-in-dialog" onClose={() => setSignInOpen(false)} aria-labelledby="sign-in-title">
+      <button className="dialog-close" aria-label="Close sign in" onClick={() => setSignInOpen(false)}><X size={20}/></button>
+      <p className="section-note mono">Your space</p><h2 id="sign-in-title">{profile ? 'Your local profile' : 'Sign in'}</h2>
+      <p>Keep a name with your progress on this device. Online accounts and syncing are not connected yet.</p>
+      <form onSubmit={saveProfile}><label htmlFor="profile-name">Your name</label><input id="profile-name" name="profile-name" autoComplete="nickname" maxLength={32} required value={profileName} onChange={event => setProfileName(event.target.value)}/>
+        <button className="primary" type="submit">{profile ? 'Update local profile' : 'Continue on this device'} <ArrowRight size={18}/></button></form>
+      {profile && <button className="text-button" onClick={() => { localStorage.removeItem('last-ringgit:profile'); setProfile(''); setProfileName(''); setSignInOpen(false); }}>Remove local profile</button>}
+      <small>Your game decisions remain in this browser unless you choose Play again.</small>
+    </dialog>
     <main>
       {screen === 'start' && <section className="start-screen">
-        <div className="start-hero"><div><h1>Last Ringgit</h1><p className="lead">One salary. 30 days. Every ringgit counts.</p></div><StartTape/></div>
-        <div className="start-form"><h2>Before you start</h2><p>How confident are you managing everyday money?</p><Confidence value={game.confidence.before} onChange={n => game.setConfidence('before', n)}/>
+        <div className="start-hero"><div className="hero-copy"><p className="hero-kicker mono"><span/>A game about real choices</p><h1>Make your first salary <em>last.</em></h1><p className="lead">One salary. 30 days. Every ringgit counts.</p><p className="hero-description">Choose how to spend, handle surprises, then rewind a decision to see how the month could have gone.</p><div className="hero-jump"><a href="#before-you-start">Set up your month <ArrowRight size={18}/></a><span className="mono">About 5 minutes</span></div></div><WelcomeVisual/></div>
+        <div className="start-form" id="before-you-start"><div className="form-heading"><span className="mono">01 / Set up</span><h2>Start with what you know</h2><p>No right answer. You can see how your choices play out.</p></div><p>How confident are you managing everyday money?</p><Confidence value={game.confidence.before} onChange={n => game.setConfidence('before', n)}/>
           <div className="scenarios"><button className="scenario active" aria-pressed="true"><span>First job</span><span className="mono">RM1,500 a month</span></button><div className="scenario disabled"><span>University student · RM800</span><span>Coming soon</span></div><div className="scenario disabled"><span>Fresh graduate · RM2,500</span><span>Coming soon</span></div></div>
-          <button className="primary" onClick={() => setScreen('split')}>Start the month</button>
+          <button className="primary start-cta" onClick={() => setScreen('split')}>Start the month <ArrowRight size={18}/></button>
         </div>
       </section>}
 
@@ -95,6 +132,9 @@ export default function App() {
         <div className="mobile-balance"><BalanceLedger cash={state.cash} savings={state.savings} commitments={state.commitments} essentials={state.essentials}/></div>
         <div className="event-sheet"><p className="section-note mono">Day {day} / Decision {state.history.length} of {eligibleEvents(state.history).length}</p><h1>{current.title}</h1><p className="lead">{current.description}</p>
           <ChoiceRows choices={current.choices} selected={choice?.id ?? null} cash={state.cash} savings={state.savings} onSelect={c => { setChoice(c); setUseSavings(false); }}/>
+          {choice && <motion.div className="choice-preview" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .25, ease: [0.2, 0.8, 0.2, 1] }} key={choice.id} aria-live="polite">
+            <span>Immediately after paying</span><strong className="mono">{-choice.cashChange > state.cash ? 'Protected savings needed' : `${money(Math.max(0, state.cash + choice.cashChange))} in your wallet`}</strong>
+          </motion.div>}
           {choice && -choice.cashChange > state.cash && <label className="savings-option"><input type="checkbox" checked={useSavings} onChange={e => setUseSavings(e.target.checked)}/> Use protected savings for this choice</label>}
           <div className="actions"><button className="primary" disabled={!choice || (-choice.cashChange > state.cash && !useSavings)} onClick={confirm}>Confirm choice</button></div>
         </div><aside className="desktop-balance"><BalanceLedger cash={state.cash} savings={state.savings} commitments={state.commitments} essentials={state.essentials}/></aside>

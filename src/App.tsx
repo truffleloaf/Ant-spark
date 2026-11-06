@@ -1,16 +1,129 @@
-import {useRef,useState} from 'react';import {History,ArrowLeft,RotateCcw} from 'lucide-react';import {useGame} from './game/useGame';import {EVENTS,Choice,eligibleEvents,money,replay} from './game/engine';import {RinggitGrid,RinggitCoin,Odometer,DayTape,RewindDial,DivergenceChart,ReceiptSlip} from './components';
-function Confidence({value,onChange}:{value:number|null;onChange:(n:number)=>void}){return <div className="segments" role="group" aria-label="Confidence from one to five">{[1,2,3,4,5].map(n=><button key={n} className={value===n?'selected':''} aria-pressed={value===n} onClick={()=>onChange(n)}>{n}</button>)}</div>}
-function ChoiceRows({choices,selected,onSelect,cash,savings,baseline}:{choices:Choice[];selected:string|null;onSelect:(c:Choice)=>void;cash:number;savings:number;baseline:number}){return <div className="choices">{choices.map(c=>{const cost=-c.cashChange,can=cost<=cash+savings;return <button key={c.id} disabled={!can} onClick={()=>onSelect(c)} className={`choice ${selected===c.id?'selected':''}`}><span><strong>{c.label}</strong><small>{c.detail}</small></span><span className="cost mono">{cost?`−${money(cost)}`:'RM0'}<small>About {Math.round(cost/baseline)} days of food money</small>{cost>cash&&can&&<small>Uses savings</small>}{!can&&<small>Not enough available</small>}</span></button>})}</div>}
-export default function App(){const game=useGame();const {state}=game;const[screen,setScreen]=useState<'start'|'split'|'play'|'history'|'rewind'|'report'>(()=>new URLSearchParams(location.search).has('demo')||state.history.length?state.finished?'report':'play':'start');const[saved,setSaved]=useState(200);const[selected,setSelected]=useState<Choice|null>(null);const[useSavings,setUseSavings]=useState(false);const[slip,setSlip]=useState(false);const[receipt,setReceipt]=useState<{label:string;day:number;cash:number;savings:number;repair:boolean}|null>(null);const[target,setTarget]=useState('');const[alternative,setAlternative]=useState('');const[scrub,setScrub]=useState(30);const[origin,setOrigin]=useState<'play'|'report'>('play');const[holding,setHolding]=useState(false);const timer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined);
- const current=state.currentEvent;const day=current?.day??state.day;const event=EVENTS.find(e=>e.id===target);const decision=state.history.find(d=>d.eventId===target);const result=alternative?game.rewindPreview(target,alternative):null;const prior=event?replay(state.history.filter(d=>d.eventId==='split'||EVENTS.find(e=>e.id===d.eventId)!.day<event.day)):state;const choice=selected;const choose=()=>{if(!choice||!current||(-choice.cashChange>state.cash&&!useSavings))return;const funding=useSavings?'savings':'cash';const next=replay([...state.history,{eventId:current.id,choiceId:choice.id,fundedFrom:funding}]);setReceipt({label:choice.label,day:current.day,cash:next.cash,savings:next.savings,repair:current.id==='friends'&&choice.id==='big'});game.choose(choice.id,funding);setSlip(true)};const holdStart=()=>{setHolding(true);timer.current=setTimeout(()=>{choose();setHolding(false)},600)};const holdEnd=()=>{clearTimeout(timer.current);setHolding(false)};const history=()=>{setOrigin(screen==='report'?'report':'play');setScreen('history')};const rewind=(id:string)=>{if(id!=='split'&&!state.history.some(d=>d.eventId===id))return;setTarget(id);setAlternative('');setScrub(30);setScreen('rewind')};
- const shell=screen!=='start'&&<header className="top"><button className="brand" onClick={()=>setScreen(state.finished?'report':'play')}>Last Ringgit</button><span className="mono">Day {day} of 30</span><button className="history-link" onClick={history}><RewindDial day={day} mini/><History size={18} strokeWidth={1.5}/> History</button></header>;
- return <div className="app min-h-screen">{shell}<main>
- {screen==='start'&&<section className="start"><div className="start-top"><div><h1>Last Ringgit</h1><p className="lead">One salary. 30 days. Every ringgit counts.</p></div><RinggitCoin/></div><RinggitGrid cash={1100} savings={0} committed={400}/><div className="start-details"><h2>Before we begin</h2><p>How confident are you managing everyday money?</p><Confidence value={game.confidence.before} onChange={n=>game.setConfidence('before',n)}/><div className="scenario"><p className="selected">First job <span className="mono">RM1,500 a month</span></p><p>University student <span>Coming soon</span></p><p>Fresh graduate <span>Coming soon</span></p></div><button className="primary" onClick={()=>setScreen('split')}>Start the month</button></div></section>}
- {screen==='split'&&<section><p className="kicker mono">Day 1 / Salary arrives</p><h1>Split your salary</h1><p className="lead">Set aside what you want to protect. The bills are fixed at RM400.</p><RinggitGrid cash={1100-saved} savings={saved} committed={400}/><div className="split-bar"><span style={{width:`${saved/15}%`}}/><span style={{width:`${(1100-saved)/15}%`}}/><span style={{width:`${400/15}%`}}/></div><div className="ledger"><div><span>Protected savings</span><Odometer value={saved}/></div><div><span>Cash for the month</span><Odometer value={1100-saved}/></div><div><span>Set aside for bills</span><span className="mono">RM400</span></div></div><label className="field">Savings amount <input type="number" min="0" max="500" step="10" value={saved} onChange={e=>setSaved(Math.max(0,Math.min(500,Math.round(Number(e.target.value)/10)*10)))}/></label><input aria-label="Adjust savings" type="range" min="0" max="500" step="10" value={saved} onChange={e=>setSaved(Number(e.target.value))}/><p>{saved?`${money(saved)} savings, ${money(1100-saved)} cash, RM400 bills.`:'Nothing set aside. You can still continue.'}</p><div className="action"><RinggitCoin small/><button className="primary" onClick={()=>{game.setSplit(saved);setScreen('play')}}>Lock in the split</button></div></section>}
- {screen==='play'&&slip&&receipt&&<section><p className="kicker mono">Day {receipt.day} / Decision recorded</p><ReceiptSlip onDismiss={()=>{setSlip(false);setSelected(null);setReceipt(null);if(state.finished)setScreen('report')}}><h2>{receipt.label}</h2><p>Wallet at the next decision: {money(receipt.cash)}</p><p>Protected savings: {money(receipt.savings)}</p>{receipt.repair&&<p>This may affect Day 18.</p>}</ReceiptSlip></section>}
- {screen==='play'&&!slip&&current&&<section><DayTape day={day} onPick={rewind}/><div className="play-layout"><div><p className="kicker mono">Day {day} / Decision {state.history.length} of {eligibleEvents(state.history).length}</p><h1>{current.title}</h1><p className="lead">{current.description}</p><div className="mobile-grid"><RinggitGrid cash={state.cash} savings={state.savings}/></div><ChoiceRows choices={current.choices} selected={selected?.id||null} onSelect={c=>{setSelected(c);setUseSavings(false)}} cash={state.cash} savings={state.savings} baseline={state.dailyBaseline}/>{selected&&<p className="preview mono">Wallet after this: {money(Math.max(0,state.cash+selected.cashChange))}</p>}{selected&&-selected.cashChange>state.cash&&<label className="savings-option"><input type="checkbox" checked={useSavings} onChange={e=>setUseSavings(e.target.checked)}/> Use protected savings for this choice</label>}<div className="action">{selected&&-selected.cashChange>state.cash*.15?<button disabled={!selected||(-selected.cashChange>state.cash&&!useSavings)} className={`primary hold ${holding?'holding':''}`} onPointerDown={holdStart} onPointerUp={holdEnd} onPointerLeave={holdEnd} onKeyDown={e=>{if(e.key==='Enter'&&!e.repeat)holdStart()}} onKeyUp={e=>{if(e.key==='Enter')holdEnd()}}>Hold to confirm</button>:<button className="primary" disabled={!selected} onClick={choose}>Confirm choice</button>}</div></div><aside className="balances"><RinggitGrid cash={state.cash} savings={state.savings}/><div className="ledger"><div><span>Wallet</span><Odometer value={state.cash}/></div><div><span>Protected savings</span><Odometer value={state.savings}/></div><div><span>Upcoming commitments</span><Odometer value={state.commitments}/></div><div><span>Available to spend</span><Odometer value={Math.max(0,state.cash-state.commitments)}/></div></div><p>Essentials covered <span className="mono">{state.essentials}%</span></p><progress max="100" value={state.essentials}/><small>{state.cash<100?'Cash is tight. You can still finish the month.':'You have room for the next decision.'}</small></aside></div></section>}
- {screen==='play'&&!slip&&state.finished&&<section><h1>The month is complete</h1><button className="primary" onClick={()=>setScreen('report')}>See your report</button></section>}
- {screen==='history'&&<section><button className="back" onClick={()=>setScreen(origin)}><ArrowLeft size={16}/> Back</button><p className="kicker mono">Your decisions</p><h1>History and rewind</h1><p className="lead">Choose a day to see what might have changed.</p><RewindDial day={day} selected={target} onPick={rewind}/><div className="history-list">{state.history.filter(d=>d.eventId!=='split').map(d=>{const ev=EVENTS.find(e=>e.id===d.eventId)!;const ch=ev.choices.find(c=>c.id===d.choiceId)!;return <button key={d.eventId} onClick={()=>rewind(d.eventId)}><span className="mono">Day {ev.day}</span><span><strong>{ev.title}</strong><small>{ch.label}</small></span><span className="mono">{money(-ch.cashChange)}</span><span className="rewind-text"><RotateCcw size={15}/> Rewind to here</span></button>})}</div><button className="text-button" onClick={()=>rewind('split')}>Rewind to Day 1 split</button></section>}
- {screen==='rewind'&&<section><button className="back" onClick={()=>setScreen('history')}><ArrowLeft size={16}/> History</button><p className="kicker mono">Rewind / Day {event?.day||1}</p><h1>Rewind to Day {event?.day||1}: {event?.title||'The salary split'}</h1><RewindDial day={day} selected={target} onPick={rewind}/>{target==='split'?<div className="field">Alternative savings <input type="range" min="0" max="500" step="10" value={alternative||decision?.choiceId||'200'} onChange={e=>setAlternative(e.target.value)}/><span className="mono">{money(Number(alternative||decision?.choiceId||200))}</span></div>:event&&<ChoiceRows choices={event.choices} selected={alternative||decision?.choiceId||null} onSelect={c=>setAlternative(c.id)} cash={prior.cash} savings={prior.savings} baseline={15}/>} {result&&<><h2>What changed</h2><DivergenceChart original={result.original} alternative={result.alternative} changedDay={event?.day||1} onDay={setScrub}/><div className="compare"><div><h3>Original</h3><RinggitGrid cash={result.original[scrub-1].cash} savings={result.original[scrub-1].savings}/><p>End balance <Odometer value={result.originalEnd}/></p></div><div><h3>Alternative</h3><RinggitGrid cash={result.alternative[scrub-1].cash} savings={result.alternative[scrub-1].savings} compareTo={result.original[scrub-1]}/><p>End balance <Odometer value={result.alternativeEnd}/></p><p>Difference <Odometer value={result.alternativeEnd-result.originalEnd}/></p></div></div><p className="insight">{result.insight}</p><button className="primary" onClick={()=>{game.applyRewind(target,alternative);setScreen(origin)}}>Keep this timeline</button><button className="text-button" onClick={()=>setAlternative('')}>Back to original</button></>}</section>}
- {screen==='report'&&game.report&&<section><ReceiptSlip><p className="kicker mono">Your 30-day report</p><div className="stamp-row"><h1>Month complete</h1><div className="stamp mono">{game.report.score} / 100</div><RinggitCoin small/></div><div className="ledger">{game.report.breakdown.map(b=><div key={b.label}><span>{b.label}<small>{b.reason}</small></span><span className="mono">{b.points} / {b.max}</span></div>)}</div><RinggitGrid cash={game.report.endBalance} savings={game.report.savings}/><div className="ledger"><div><span>End balance</span><Odometer value={game.report.endBalance}/></div><div><span>Protected savings</span><Odometer value={game.report.savings}/></div><div><span>Essentials covered</span><span className="mono">{game.report.essentialsCoveredPct}%</span></div><div><span>Emergency preparedness</span><span>{game.report.emergencyPreparedness}</span></div></div><h2>Your money habit</h2><h3>{game.report.personality.name}</h3><p>{game.report.personality.text}</p><h2>Next steps</h2>{game.report.nextSteps.map(x=><p key={x}>{x}</p>)}<h2>How confident do you feel now?</h2><p>Before: {game.confidence.before??'Not answered'}</p><Confidence value={game.confidence.after} onChange={n=>game.setConfidence('after',n)}/><button className="primary" onClick={history}>Rewind a decision</button><button className="text-button" onClick={()=>{game.reset();setScreen('start')}}>Play again</button><small>This score is a learning game indicator, not a credit score.</small></ReceiptSlip></section>}
- </main></div>}
+import { useEffect, useState } from 'react';
+import { ArrowLeft, History, RotateCcw } from 'lucide-react';
+import { useGame } from './game/useGame';
+import { EVENTS, eligibleEvents, money, replay, type Choice } from './game/engine';
+import { DayTape, DivergenceChart, Odometer, ReceiptSlip, ScoreStamp, StartTape } from './components';
+
+type Screen = 'start' | 'split' | 'play' | 'history' | 'rewind' | 'report';
+
+function Confidence({ value, onChange }: { value: number | null; onChange: (n: number) => void }) {
+  return <div className="segments" role="group" aria-label="Confidence from one to five">
+    {[1, 2, 3, 4, 5].map(n => <button key={n} aria-pressed={value === n} className={value === n ? 'selected' : ''} onClick={() => onChange(n)}>{n}</button>)}
+  </div>;
+}
+
+function ChoiceRows({ choices, selected, onSelect, cash, savings }: {
+  choices: Choice[]; selected: string | null; onSelect: (choice: Choice) => void; cash: number; savings: number;
+}) {
+  return <div className="choices">{choices.map(choice => {
+    const cost = -choice.cashChange, affordable = cost <= cash + savings;
+    return <button key={choice.id} disabled={!affordable} className={`choice ${selected === choice.id ? 'selected' : ''}`}
+      aria-pressed={selected === choice.id} onClick={() => onSelect(choice)}>
+      <span><strong>{choice.label}</strong><small>{choice.detail}</small></span>
+      <span className="choice-cost mono">{cost ? `−${money(cost)}` : 'RM0'}{!affordable && <small>Not enough available</small>}{cost > cash && affordable && <small>Uses savings</small>}</span>
+    </button>;
+  })}</div>;
+}
+
+function BalanceLedger({ cash, savings, commitments, essentials }: { cash: number; savings: number; commitments: number; essentials: number }) {
+  return <div className="balance-ledger" aria-label="Current balances">
+    <div className="ledger-row"><span>Wallet</span><Odometer value={cash}/></div>
+    <div className="ledger-row"><span>Protected savings</span><Odometer value={savings}/></div>
+    <div className="ledger-row"><span>Upcoming commitments</span><Odometer value={commitments}/></div>
+    <div className="ledger-row emphasized"><span>Available to spend</span><Odometer value={Math.max(0, cash - commitments)}/></div>
+    <div className="essentials-line"><div><span>Essentials covered</span><span className="mono">{essentials}%</span></div><progress max="100" value={essentials}/><small>{cash < 100 ? 'Cash is tight. You can still finish the month.' : 'You have room for the next decision.'}</small></div>
+  </div>;
+}
+
+export default function App() {
+  const game = useGame(), { state } = game;
+  const [screen, setScreen] = useState<Screen>(() => new URLSearchParams(location.search).has('demo') || state.history.length ? state.finished ? 'report' : 'play' : 'start');
+  const [savings, setSavings] = useState(200);
+  const [choice, setChoice] = useState<Choice | null>(null);
+  const [useSavings, setUseSavings] = useState(false);
+  const [receipt, setReceipt] = useState<{ day: number; label: string; change: number; repair: boolean } | null>(null);
+  const [rewindId, setRewindId] = useState('');
+  const [alternativeId, setAlternativeId] = useState('');
+  const [chartDay, setChartDay] = useState(30);
+  const [returnTo, setReturnTo] = useState<'play' | 'report'>('play');
+  useEffect(() => { window.scrollTo(0, 0); }, [screen]);
+
+  const current = state.currentEvent;
+  const day = receipt?.day ?? current?.day ?? state.day;
+  const rewindEvent = EVENTS.find(e => e.id === rewindId);
+  const previousDecision = state.history.find(d => d.eventId === rewindId);
+  const prior = rewindEvent ? replay(state.history.filter(d => d.eventId === 'split' || EVENTS.find(e => e.id === d.eventId)!.day < rewindEvent.day)) : state;
+  const comparison = screen === 'rewind' && state.history.length && alternativeId ? game.rewindPreview(rewindId, alternativeId) : null;
+
+  function openHistory() { setReturnTo(screen === 'report' ? 'report' : 'play'); setScreen('history'); }
+  function rewind(id: string) { if (id !== 'split' && !state.history.some(d => d.eventId === id)) return; setRewindId(id); setAlternativeId(''); setChartDay(30); setScreen('rewind'); }
+  function confirm() {
+    if (!current || !choice || (-choice.cashChange > state.cash && !useSavings)) return;
+    const funding = useSavings ? 'savings' : 'cash';
+    setReceipt({ day: current.day, label: choice.label, change: choice.cashChange, repair: current.id === 'friends' && choice.id === 'big' });
+    game.choose(choice.id, funding);
+  }
+
+  return <div className="app min-h-screen">
+    {screen !== 'start' && <header className="topbar"><button className="wordmark" onClick={() => setScreen(state.finished ? 'report' : 'play')}>Last Ringgit</button><span className="mono top-day">Day {day} of 30</span><button className="utility" onClick={openHistory}><History size={18} strokeWidth={1.5}/> History</button></header>}
+    <main>
+      {screen === 'start' && <section className="start-screen">
+        <div className="start-hero"><div><h1>Last Ringgit</h1><p className="lead">One salary. 30 days. Every ringgit counts.</p></div><StartTape/></div>
+        <div className="start-form"><h2>Before you start</h2><p>How confident are you managing everyday money?</p><Confidence value={game.confidence.before} onChange={n => game.setConfidence('before', n)}/>
+          <div className="scenarios"><button className="scenario active" aria-pressed="true"><span>First job</span><span className="mono">RM1,500 a month</span></button><div className="scenario disabled"><span>University student · RM800</span><span>Coming soon</span></div><div className="scenario disabled"><span>Fresh graduate · RM2,500</span><span>Coming soon</span></div></div>
+          <button className="primary" onClick={() => setScreen('split')}>Start the month</button>
+        </div>
+      </section>}
+
+      {screen === 'split' && <section className="narrow-screen">
+        <p className="section-note mono">Day 1 / Salary arrives</p><h1>Split your salary</h1><p className="lead">Set aside what you want to protect. The bills are fixed at RM400.</p>
+        <div className="split-bar" role="img" aria-label={`${money(savings)} savings, ${money(1100 - savings)} cash, RM400 bills`}><span style={{ width: `${savings / 15}%` }}/><span style={{ width: `${(1100 - savings) / 15}%` }}/><span style={{ width: `${400 / 15}%` }}/></div>
+        <div className="ledger"><div className="ledger-row"><span>Protected savings</span><Odometer value={savings}/></div><div className="ledger-row"><span>Cash for the month</span><Odometer value={1100 - savings}/></div><div className="ledger-row"><span>Set aside for bills</span><span className="mono">RM400</span></div></div>
+        <label className="input-label" htmlFor="savings-number">Savings amount</label><input id="savings-number" className="number-input mono" type="number" min="0" max="500" step="10" value={savings} onChange={e => setSavings(Math.max(0, Math.min(500, Math.round(Number(e.target.value) / 10) * 10)))}/>
+        <input className="savings-range" aria-label="Adjust savings" type="range" min="0" max="500" step="10" value={savings} onChange={e => setSavings(Number(e.target.value))}/>
+        <p className="quiet">{savings ? `${money(savings)} savings, ${money(1100 - savings)} cash, RM400 bills.` : 'Nothing set aside. You can still continue.'}</p>
+        <div className="actions"><button className="primary" onClick={() => { game.setSplit(savings); setScreen('play'); }}>Lock in the split</button></div>
+      </section>}
+
+      {screen === 'play' && receipt && <section className="consequence-screen"><DayTape day={receipt.day}/><ReceiptSlip onDismiss={() => { setReceipt(null); setChoice(null); setUseSavings(false); if (state.finished) setScreen('report'); }}>
+        <p className="section-note mono">Day {receipt.day} / Decision recorded</p><h2>{receipt.label}</h2>
+        <div className="ledger"><div className="ledger-row"><span>{receipt.label}</span><span className={`mono ${receipt.change < 0 ? 'negative' : ''}`}>{receipt.change < 0 ? `−${money(-receipt.change)}` : money(receipt.change)}</span></div><div className="ledger-row"><span>Wallet at next decision</span><Odometer value={state.cash}/></div><div className="ledger-row"><span>Protected savings</span><Odometer value={state.savings}/></div></div>
+        {receipt.repair && <p className="quiet">This may affect Day 18.</p>}
+      </ReceiptSlip></section>}
+
+      {screen === 'play' && !receipt && current && <section><DayTape day={day}/><div className="play-layout">
+        <div className="mobile-balance"><BalanceLedger cash={state.cash} savings={state.savings} commitments={state.commitments} essentials={state.essentials}/></div>
+        <div className="event-sheet"><p className="section-note mono">Day {day} / Decision {state.history.length} of {eligibleEvents(state.history).length}</p><h1>{current.title}</h1><p className="lead">{current.description}</p>
+          <ChoiceRows choices={current.choices} selected={choice?.id ?? null} cash={state.cash} savings={state.savings} onSelect={c => { setChoice(c); setUseSavings(false); }}/>
+          {choice && -choice.cashChange > state.cash && <label className="savings-option"><input type="checkbox" checked={useSavings} onChange={e => setUseSavings(e.target.checked)}/> Use protected savings for this choice</label>}
+          <div className="actions"><button className="primary" disabled={!choice || (-choice.cashChange > state.cash && !useSavings)} onClick={confirm}>Confirm choice</button></div>
+        </div><aside className="desktop-balance"><BalanceLedger cash={state.cash} savings={state.savings} commitments={state.commitments} essentials={state.essentials}/></aside>
+      </div></section>}
+      {screen === 'play' && !receipt && state.finished && <section className="narrow-screen"><h1>The month is complete</h1><button className="primary" onClick={() => setScreen('report')}>See your report</button></section>}
+
+      {screen === 'history' && <section className="history-screen"><button className="back" onClick={() => setScreen(returnTo)}><ArrowLeft size={16}/> Back</button><p className="section-note mono">Your decisions</p><h1>History and rewind</h1><p className="lead">Choose a decision to see what might have changed.</p>
+        <div className="history-head mono"><span>Day</span><span>Decision</span><span>Amount</span></div>
+        <div className="history-list">{state.history.filter(d => d.eventId !== 'split').map(d => { const event = EVENTS.find(e => e.id === d.eventId)!; const picked = event.choices.find(c => c.id === d.choiceId)!; return <div className="history-row" key={d.eventId}><span className="mono">{event.day}</span><span><strong>{event.title}</strong><small>{picked.label}</small></span><span className="mono">{picked.cashChange ? `−${money(-picked.cashChange)}` : 'RM0'}</span><button onClick={() => rewind(d.eventId)}><RotateCcw size={16} strokeWidth={1.5}/> Rewind to here</button></div>; })}</div>
+        <button className="text-button" onClick={() => rewind('split')}>Rewind to Day 1 split</button>
+      </section>}
+
+      {screen === 'rewind' && <section className="rewind-screen"><button className="back" onClick={() => setScreen('history')}><ArrowLeft size={16}/> History</button><p className="section-note mono">Rewind / Day {rewindEvent?.day ?? 1}</p><h1>Rewind to Day {rewindEvent?.day ?? 1}: {rewindEvent?.title ?? 'The salary split'}</h1>
+        <DayTape day={rewindEvent?.day ?? 1} currentDay={day}/>
+        <div className="rewind-choices">{rewindId === 'split' ? <label className="input-label">Alternative savings <input className="savings-range" type="range" min="0" max="500" step="10" value={alternativeId || previousDecision?.choiceId || '200'} onChange={e => setAlternativeId(e.target.value)}/><span className="mono">{money(Number(alternativeId || previousDecision?.choiceId || 200))}</span></label> : rewindEvent && <ChoiceRows choices={rewindEvent.choices} selected={alternativeId || previousDecision?.choiceId || null} cash={prior.cash} savings={prior.savings} onSelect={c => setAlternativeId(c.id)}/>}</div>
+        {comparison && <><DivergenceChart original={comparison.original} alternative={comparison.alternative} changedDay={rewindEvent?.day ?? 1} onDay={setChartDay}/>
+          <div className="comparison"><div className="comparison-column"><h3>Original</h3><div className="ledger-row"><span>End balance</span><Odometer value={comparison.originalEnd}/></div><div className="ledger-row"><span>Protected savings</span><Odometer value={comparison.original[chartDay - 1].savings}/></div><div className="ledger-row"><span>Emergency buffer</span><Odometer value={comparison.originalEnd}/></div></div>
+            <div className="comparison-column alternative"><h3>Alternative</h3><div className="ledger-row"><span>End balance</span><Odometer value={comparison.alternativeEnd}/></div><div className="ledger-row"><span>Protected savings</span><Odometer value={comparison.alternative[chartDay - 1].savings}/></div><div className="ledger-row"><span>Emergency buffer</span><Odometer value={comparison.alternativeEnd}/></div><p className={`difference mono ${comparison.alternativeEnd >= comparison.originalEnd ? 'positive' : 'negative'}`}>{money(comparison.alternativeEnd - comparison.originalEnd)} from the original</p></div></div>
+          <p className="insight">{comparison.insight}</p><div className="rewind-actions"><button className="primary" onClick={() => { game.applyRewind(rewindId, alternativeId); setScreen('report'); }}>Keep this timeline</button><button className="text-button" onClick={() => setAlternativeId('')}>Back to original</button></div>
+        </>}
+      </section>}
+
+      {screen === 'report' && game.report && <section className="report-screen"><ReceiptSlip report><p className="section-note mono">Your 30-day report</p><div className="report-heading"><h1>Month complete</h1><ScoreStamp score={game.report.score}/></div>
+        <div className="ledger report-breakdown">{game.report.breakdown.map(line => <div className="ledger-row" key={line.label}><span>{line.label}<small>{line.reason}</small></span><span className="mono">{line.points} / {line.max}</span></div>)}</div>
+        <div className="ledger report-totals"><div className="ledger-row"><span>End balance</span><Odometer value={game.report.endBalance}/></div><div className="ledger-row"><span>Protected savings</span><Odometer value={game.report.savings}/></div><div className="ledger-row"><span>Essentials covered</span><span className="mono">{game.report.essentialsCoveredPct}%</span></div><div className="ledger-row"><span>Emergency preparedness</span><span>{game.report.emergencyPreparedness}</span></div></div>
+        <h2>Your money habit</h2><h3>{game.report.personality.name}</h3><p>{game.report.personality.text}</p><h2>Next steps</h2><ol className="next-steps">{game.report.nextSteps.map(step => <li key={step}>{step}</li>)}</ol>
+        <h2>How confident do you feel now?</h2><p className="quiet">Before: <span className="mono">{game.confidence.before ?? 'Not answered'}</span></p><Confidence value={game.confidence.after} onChange={n => game.setConfidence('after', n)}/>
+        <div className="report-actions"><button className="primary" onClick={openHistory}>Rewind a decision</button><button className="text-button" onClick={() => { setAlternativeId(''); setRewindId(''); game.reset(); setScreen('start'); }}>Play again</button></div><p className="disclaimer">This score is a learning game indicator, not a credit score.</p>
+      </ReceiptSlip></section>}
+    </main>
+  </div>;
+}

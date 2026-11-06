@@ -4,3 +4,6 @@
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
 .savings-option{display:flex;align-items:center;gap:12px;min-height:44px;color:var(--green)}.savings-option input{width:20px;height:20px;accent-color:var(--green)}
 .digit-window{display:inline-block;vertical-align:-.14em;height:1em;width:.6em;overflow:hidden}.digit-strip{display:block;white-space:pre-wrap;word-break:break-all;width:.6em;line-height:1em}
+.receipt{overflow:hidden;mask:linear-gradient(#000 0 0) top/100% calc(100% - 8px) no-repeat,conic-gradient(from -45deg at bottom,#000 90deg,transparent 0) bottom/16px 8px repeat-x}
+.cell.changed.lost{outline-color:var(--red)}
+@keyframes grid-flip{0%{transform:rotateX(90deg)}50%{transform:rotateX(90deg)}100%{transform:rotateX(0)}}.cell{animation:grid-flip .18s both}
